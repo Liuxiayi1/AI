@@ -8,7 +8,7 @@ from PIL import Image
 # 设置页面配置
 st.set_page_config(page_title="PDF工具箱", page_icon="📄", layout="wide")
 
-st.title("📄 PDF 表格与图片提取工具")
+st.title("📄 PDF 表格与图片提取工具测试提交")
 st.markdown("上传 PDF 文件，轻松提取其中的表格和图片。")
 
 # 文件上传
