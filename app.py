@@ -1,167 +1,90 @@
 import streamlit as st
-import pdfplumber
 import pandas as pd
-import fitz  # PyMuPDF
-import io
-from PIL import Image
+import os
 
-# 设置页面配置
-st.set_page_config(page_title="PDF工具箱", page_icon="📄", layout="wide")
+# 设置页面标题和说明
+st.title('企业数字化转型指数查询系统')
+st.write('本系统基于1999-2023年的数据，支持通过股票代码查询企业的数字化转型指数')
 
-st.title("📄 PDF 表格与图片提取工具测试提交")
-st.markdown("上传 PDF 文件，轻松提取其中的表格和图片。")
-
-# 文件上传
-uploaded_file = st.file_uploader("请上传或者拖拽 PDF 文件", type=["pdf"])
-
-if uploaded_file:
-    # 读取文件内容，以便多次使用
-    file_bytes = uploaded_file.read()
+# 读取jgb.csv和gjc.csv文件
+try:
+    # 读取主要数据文件jgb.csv，包含数字化转型指数，将股票代码列设置为字符串类型
+    jgb_df = pd.read_csv('jgb.csv', dtype={'股票代码': str})
     
-    # 创建两个 Tab
-    tab1, tab2 = st.tabs(["📊 表格提取", "🖼️ 图片提取"])
+    # 读取补充数据文件gjc.csv，将股票代码列设置为字符串类型
+    gjc_df = pd.read_csv('gjc.csv', dtype={'股票代码': str})
+    
+    st.success('数据加载成功！')
+    
+except FileNotFoundError:
+    st.error('找不到数据文件(jgb.csv或gjc.csv)，请确保文件在正确的目录下')
+    st.stop()
 
-    # --- 表格提取部分 ---
-    with tab1:
-        st.header("提取的表格")
+# 获取所有股票代码列表
+stock_codes = jgb_df['股票代码'].unique().tolist()
+stock_codes.sort()  # 排序以便用户查找
+
+# 获取所有年份列表
+years = jgb_df['年份'].unique().tolist()
+years.sort()  # 排序以便用户查找
+
+# 添加股票代码输入框
+selected_stock = st.text_input('请输入股票代码', placeholder='例如：000921')
+
+# 添加年份选择器
+selected_year = st.selectbox('请选择年份', options=years)
+
+# 查询按钮
+if st.button('查询'):
+    if not selected_stock:
+        st.warning('请输入股票代码')
+    else:
+        # 过滤数据
+        result = jgb_df[(jgb_df['股票代码'] == selected_stock) & (jgb_df['年份'] == selected_year)]
         
-        extract_btn = st.button("开始提取表格")
-        
-        if extract_btn:
-            all_tables = []
-            with st.spinner("正在提取表格..."):
-                try:
-                    # 使用 pdfplumber 打开
-                    with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                        for i, page in enumerate(pdf.pages):
-                            tables = page.extract_tables()
-                            for table in tables:
-                                # 处理可能为空的表头或数据
-                                if not table:
-                                    continue
-                                    
-                                # 处理表头：转为字符串并处理 None
-                                headers = []
-                                if table[0]:
-                                    headers = [str(c) if c is not None else f"Col_{k}" for k, c in enumerate(table[0])]
-                                else:
-                                    # 如果第一行为空，自动生成列名
-                                    headers = [f"Col_{k}" for k in range(len(table[0] if len(table)>0 else []))]
+        if result.empty:
+            st.warning(f'未找到股票代码{selected_stock}在{selected_year}年的数据')
+        else:
+            # 显示查询结果
+            st.subheader('查询结果')
+            st.write(f'股票代码：{result.iloc[0]["股票代码"]}')
+            st.write(f'企业名称：{result.iloc[0]["企业名称"]}')
+            st.write(f'年份：{result.iloc[0]["年份"]}')
+            st.write(f'数字化转型指数(0-100分)：{result.iloc[0]["数字化转型指数(0-100分)"]}')
+            
+            # 显示更多相关数据
+            st.subheader('详细技术词频数据')
+            tech_columns = ['人工智能词频数', '大数据词频数', '云计算词频数', '区块链词频数', '数字技术运用词频数']
+            for col in tech_columns:
+                st.write(f'{col}：{result.iloc[0][col]}')
 
-                                # 创建 DataFrame
-                                if len(table) > 1:
-                                    df = pd.DataFrame(table[1:], columns=headers)
-                                else:
-                                    # 只有表头的情况
-                                    df = pd.DataFrame([], columns=headers)
-                                    
-                                all_tables.append((i + 1, df))
-                    
-                    if not all_tables:
-                        st.warning("未在 PDF 中检测到表格。")
-                    else:
-                        st.success(f"共提取到 {len(all_tables)} 个表格。")
-                        
-                        # 准备用于导出的 Excel Writer
-                        output = io.BytesIO()
-                        try:
-                            # 使用 engine='openpyxl'
-                            writer = pd.ExcelWriter(output, engine='openpyxl')
-                            saved_sheets = 0
-                            
-                            for idx, (page_num, df) in enumerate(all_tables):
-                                st.subheader(f"表格 {idx + 1} (第 {page_num} 页)")
-                                st.dataframe(df)
-                                
-                                try:
-                                    # 构建 Sheet 名称
-                                    sheet_name = f"Page_{page_num}_Table_{idx+1}"
-                                    # 清理非法字符
-                                    invalid_chars = [':', '\\', '/', '?', '*', '[', ']']
-                                    for char in invalid_chars:
-                                        sheet_name = sheet_name.replace(char, '_')
-                                    # 截断长度
-                                    if len(sheet_name) > 31:
-                                        sheet_name = sheet_name[:31]
-                                    
-                                    # 写入
-                                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-                                    saved_sheets += 1
-                                except Exception as e_sheet:
-                                    st.warning(f"无法写入表格 {idx+1} 到 Excel: {e_sheet}")
+# 添加数据概览部分
+st.subheader('数据概览')
+# 显示数据的基本统计信息
+st.write(f'数据年份范围：{min(years)}-{max(years)}')
+st.write(f'包含企业数量：{len(stock_codes)}家')
 
-                            # 只有成功写入至少一个 Sheet 才保存
-                            if saved_sheets > 0:
-                                writer.close()
-                                output.seek(0)
-                                st.download_button(
-                                    label="📥 导出所有表格为 Excel",
-                                    data=output,
-                                    file_name="extracted_tables.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                )
-                            else:
-                                st.warning("未能生成有效的 Excel 文件（没有表格被成功写入）。")
-                                
-                        except Exception as e_excel:
-                            st.error(f"生成 Excel 文件时发生错误: {e_excel}")
-                        
-                except Exception as e:
-                    st.error(f"提取表格时出错: {e}")
+# 添加数据可视化示例（可选）
+if st.checkbox('显示数字化转型指数分布'):
+    import matplotlib.pyplot as plt
+    
+    # 按年份显示数字化转型指数的分布
+    fig, ax = plt.subplots(figsize=(10, 6))
+    jgb_df.boxplot(column='数字化转型指数(0-100分)', by='年份', ax=ax, rot=45)
+    plt.title('各年份数字化转型指数分布')
+    plt.suptitle('')  # 移除默认标题
+    plt.ylabel('数字化转型指数(0-100分)')
+    st.pyplot(fig)
 
-    # --- 图片提取部分 ---
-    with tab2:
-        st.header("提取的图片")
-        
-        extract_img_btn = st.button("开始提取图片")
-        
-        if extract_img_btn:
-            with st.spinner("正在提取图片..."):
-                try:
-                    # 使用 PyMuPDF (fitz) 打开
-                    doc = fitz.open(stream=file_bytes, filetype="pdf")
-                    image_count = 0
-                    
-                    # 准备显示图片的列
-                    cols = st.columns(3)
-                    
-                    for page_index in range(len(doc)):
-                        page = doc[page_index]
-                        image_list = page.get_images(full=True)
-                        
-                        if image_list:
-                            for image_index, img in enumerate(image_list):
-                                xref = img[0]
-                                base_image = doc.extract_image(xref)
-                                image_bytes = base_image["image"]
-                                image_ext = base_image["ext"]
-                                
-                                # 使用 PIL 处理图片以便显示
-                                image = Image.open(io.BytesIO(image_bytes))
-                                
-                                # 在列中显示
-                                col = cols[image_count % 3]
-                                with col:
-                                    st.image(image, caption=f"第 {page_index + 1} 页 - 图片 {image_index + 1}", use_container_width=True)
-                                    
-                                    # 单张下载按钮
-                                    st.download_button(
-                                        label="📥 下载",
-                                        data=image_bytes,
-                                        file_name=f"page_{page_index+1}_img_{image_index+1}.{image_ext}",
-                                        mime=f"image/{image_ext}",
-                                        key=f"btn_{page_index}_{image_index}"
-                                    )
-                                
-                                image_count += 1
-                    
-                    if image_count == 0:
-                        st.warning("未在 PDF 中检测到图片。")
-                    else:
-                        st.success(f"共提取到 {image_count} 张图片。")
-                        
-                except Exception as e:
-                    st.error(f"提取图片时出错: {e}")
+# 添加显示原始数据表格的功能
+st.subheader('查看原始数据')
+# 创建选项卡
+selected_tab = st.radio('选择要查看的数据集：', ['1999-2023年数字化转型指数结果表', '1999-2023年年报技术关键词统计'])
 
+# 根据选择显示不同的数据表格
+if selected_tab == '1999-2023年数字化转型指数结果表':
+    st.write('1999-2023年数字化转型指数结果表文件内容：')
+    st.dataframe(jgb_df)
 else:
-    st.info("请在上方上传 PDF 文件以开始使用。")
+    st.write('1999-2023年年报技术关键词统计文件内容：')
+    st.dataframe(gjc_df)
