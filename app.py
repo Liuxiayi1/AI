@@ -1,6 +1,12 @@
 import streamlit as st
 import pandas as pd
 import os
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# 全局配置matplotlib中文字体，解决中文乱码问题
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']  # 多字体备份
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
 # 设置页面标题和说明
 st.set_page_config(page_title='企业数字化转型指数查询系统', layout='wide', initial_sidebar_state='expanded')
@@ -375,12 +381,7 @@ if search_button:
                 company_data_sorted = company_data.sort_values('年份')
                 
                 # 绘制趋势图
-                import matplotlib.pyplot as plt
-                import seaborn as sns
-                
-                # 设置中文显示
-                plt.rcParams['font.sans-serif'] = ['SimHei']  # 设置中文字体
-                plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+                # 使用全局配置的matplotlib字体
                 
                 fig, ax = plt.subplots(figsize=(16, 8), dpi=100)
                 # 优化折线图样式
